@@ -13,6 +13,7 @@ import {
   type PortEntry,
 } from "./lib/ports";
 import {
+  capturePane,
   findTmuxPaneForPid,
   listTmuxPanes,
   type TmuxPane,
@@ -83,6 +84,12 @@ function App() {
     if (!selected?.pid) return null;
     return findTmuxPaneForPid(selected.pid, panes);
   }, [selected?.pid, panes]);
+
+  const paneOutput = useMemo<string[]>(() => {
+    if (!tmuxPane) return [];
+    const target = `${tmuxPane.session}:${tmuxPane.windowIndex}.${tmuxPane.paneIndex}`;
+    return capturePane(target, 10);
+  }, [tmuxPane?.paneId, tick]);
 
   const dockerHit = useMemo<DockerPortHit | null>(() => {
     if (!selected) return null;
@@ -225,8 +232,10 @@ function App() {
           selected={selected}
           procInfo={procInfo}
           tmuxPane={tmuxPane}
+          paneOutput={paneOutput}
           dockerHit={dockerHit}
           dockerIdx={dockerIdx}
+          paneWidth={Math.max(20, dims.width - 50)}
           onSelect={selectIndex}
           onScroll={(dir, delta) =>
             navigate((dir === "up" ? -1 : 1) * Math.max(1, delta))
@@ -278,8 +287,10 @@ function Body({
   selected,
   procInfo,
   tmuxPane,
+  paneOutput,
   dockerHit,
   dockerIdx,
+  paneWidth,
   onSelect,
   onScroll,
 }: {
@@ -290,8 +301,10 @@ function Body({
   selected: PortEntry | null;
   procInfo: ProcessInfo | null;
   tmuxPane: TmuxPane | null;
+  paneOutput: string[];
   dockerHit: DockerPortHit | null;
   dockerIdx: Map<number, DockerPortHit>;
+  paneWidth: number;
   onSelect: (idx: number) => void;
   onScroll: (dir: "up" | "down", delta: number) => void;
 }) {
@@ -310,7 +323,9 @@ function Body({
         port={selected}
         procInfo={procInfo}
         tmuxPane={tmuxPane}
+        paneOutput={paneOutput}
         dockerHit={dockerHit}
+        paneWidth={paneWidth}
       />
     </box>
   );
@@ -417,12 +432,16 @@ function Details({
   port,
   procInfo,
   tmuxPane,
+  paneOutput,
   dockerHit,
+  paneWidth,
 }: {
   port: PortEntry | null;
   procInfo: ProcessInfo | null;
   tmuxPane: TmuxPane | null;
+  paneOutput: string[];
   dockerHit: DockerPortHit | null;
+  paneWidth: number;
 }) {
   return (
     <box
@@ -529,6 +548,12 @@ function Details({
                 value={`${tmuxPane.session}:${tmuxPane.windowIndex}.${tmuxPane.paneIndex}`}
                 valueFg={C.mustardLight}
               />
+
+              <box marginTop={1} />
+              <text fg={C.mustardDim}>
+                <strong>━━ pane output ━━</strong>
+              </text>
+              <PaneOutput lines={paneOutput} maxWidth={paneWidth} />
             </>
           ) : (
             <text fg={C.textDim}>
@@ -537,6 +562,34 @@ function Details({
           )}
         </>
       )}
+    </box>
+  );
+}
+
+function PaneOutput({
+  lines,
+  maxWidth,
+}: {
+  lines: string[];
+  maxWidth: number;
+}) {
+  if (lines.length === 0) {
+    return (
+      <text fg={C.textDim}>
+        <em>(no output)</em>
+      </text>
+    );
+  }
+  return (
+    <box flexDirection="column">
+      {lines.map((line, i) => {
+        const trimmed = line.length > maxWidth ? line.slice(0, maxWidth - 1) + "…" : line;
+        return (
+          <text key={i} fg={C.textDim}>
+            {trimmed || " "}
+          </text>
+        );
+      })}
     </box>
   );
 }

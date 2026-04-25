@@ -49,6 +49,21 @@ export function listTmuxPanes(): TmuxPane[] {
     .filter((p): p is TmuxPane => p !== null);
 }
 
+export function capturePane(target: string, lines: number = 10): string[] {
+  // -S -200: include up to 200 lines of scrollback so we have at least `lines`
+  // even when the pane has emitted few visible lines.
+  const proc = spawnSync(
+    "tmux",
+    ["capture-pane", "-t", target, "-p", "-S", "-200"],
+    { encoding: "utf8", timeout: 1000 },
+  );
+  if (proc.status !== 0) return [];
+
+  const all = proc.stdout.split("\n");
+  while (all.length > 0 && all[all.length - 1]!.trim() === "") all.pop();
+  return all.slice(-lines);
+}
+
 export function findTmuxPaneForPid(
   pid: number,
   panes: TmuxPane[],
