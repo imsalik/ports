@@ -21,6 +21,7 @@ import {
 import { getProcessInfo, type ProcessInfo } from "./lib/process";
 import {
   buildDockerPortIndex,
+  getContainerLogs,
   listDockerContainers,
   stopDockerContainer,
   type DockerPortHit,
@@ -95,6 +96,11 @@ function App() {
     if (!selected) return null;
     return dockerIdx.get(selected.port) ?? null;
   }, [selected?.port, dockerIdx]);
+
+  const dockerLogs = useMemo<string[]>(() => {
+    if (!dockerHit) return [];
+    return getContainerLogs(dockerHit.container.containerId, 10);
+  }, [dockerHit?.container.containerId, tick]);
 
   const navigate = (delta: number) => {
     setSelectedIndex((i) =>
@@ -234,6 +240,7 @@ function App() {
           tmuxPane={tmuxPane}
           paneOutput={paneOutput}
           dockerHit={dockerHit}
+          dockerLogs={dockerLogs}
           dockerIdx={dockerIdx}
           paneWidth={Math.max(20, dims.width - 50)}
           onSelect={selectIndex}
@@ -289,6 +296,7 @@ function Body({
   tmuxPane,
   paneOutput,
   dockerHit,
+  dockerLogs,
   dockerIdx,
   paneWidth,
   onSelect,
@@ -303,6 +311,7 @@ function Body({
   tmuxPane: TmuxPane | null;
   paneOutput: string[];
   dockerHit: DockerPortHit | null;
+  dockerLogs: string[];
   dockerIdx: Map<number, DockerPortHit>;
   paneWidth: number;
   onSelect: (idx: number) => void;
@@ -325,6 +334,7 @@ function Body({
         tmuxPane={tmuxPane}
         paneOutput={paneOutput}
         dockerHit={dockerHit}
+        dockerLogs={dockerLogs}
         paneWidth={paneWidth}
       />
     </box>
@@ -434,6 +444,7 @@ function Details({
   tmuxPane,
   paneOutput,
   dockerHit,
+  dockerLogs,
   paneWidth,
 }: {
   port: PortEntry | null;
@@ -441,6 +452,7 @@ function Details({
   tmuxPane: TmuxPane | null;
   paneOutput: string[];
   dockerHit: DockerPortHit | null;
+  dockerLogs: string[];
   paneWidth: number;
 }) {
   return (
@@ -524,12 +536,12 @@ function Details({
             </>
           )}
 
-          <box marginTop={1} />
-          <text fg={C.mustardDim}>
-            <strong>━━ tmux ━━</strong>
-          </text>
-          {tmuxPane ? (
+          {tmuxPane && (
             <>
+              <box marginTop={1} />
+              <text fg={C.mustardDim}>
+                <strong>━━ tmux ━━</strong>
+              </text>
               <Row
                 label="Session"
                 value={tmuxPane.session}
@@ -553,12 +565,18 @@ function Details({
               <text fg={C.mustardDim}>
                 <strong>━━ pane output ━━</strong>
               </text>
-              <PaneOutput lines={paneOutput} maxWidth={paneWidth} />
+              <LogBox lines={paneOutput} maxWidth={paneWidth} />
             </>
-          ) : (
-            <text fg={C.textDim}>
-              <em>not running in a tmux pane</em>
-            </text>
+          )}
+
+          {dockerHit && (
+            <>
+              <box marginTop={1} />
+              <text fg={C.mustardDim}>
+                <strong>━━ docker logs ━━</strong>
+              </text>
+              <LogBox lines={dockerLogs} maxWidth={paneWidth} />
+            </>
           )}
         </>
       )}
@@ -566,30 +584,39 @@ function Details({
   );
 }
 
-function PaneOutput({
+function LogBox({
   lines,
   maxWidth,
 }: {
   lines: string[];
   maxWidth: number;
 }) {
-  if (lines.length === 0) {
-    return (
-      <text fg={C.textDim}>
-        <em>(no output)</em>
-      </text>
-    );
-  }
+  // Inner text width: subtract 2 (borders) + 2 (paddingX) = 4
+  const inner = Math.max(10, maxWidth - 4);
   return (
-    <box flexDirection="column">
-      {lines.map((line, i) => {
-        const trimmed = line.length > maxWidth ? line.slice(0, maxWidth - 1) + "…" : line;
-        return (
-          <text key={i} fg={C.textDim}>
-            {trimmed || " "}
-          </text>
-        );
-      })}
+    <box
+      border
+      borderStyle="single"
+      borderColor={C.mustardDim}
+      backgroundColor={C.surface}
+      paddingX={1}
+      flexDirection="column"
+    >
+      {lines.length === 0 ? (
+        <text fg={C.textDim}>
+          <em>(no output)</em>
+        </text>
+      ) : (
+        lines.map((line, i) => {
+          const trimmed =
+            line.length > inner ? line.slice(0, inner - 1) + "…" : line;
+          return (
+            <text key={i} fg={C.mustardLight}>
+              {trimmed || " "}
+            </text>
+          );
+        })
+      )}
     </box>
   );
 }

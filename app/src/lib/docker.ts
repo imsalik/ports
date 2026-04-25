@@ -98,6 +98,22 @@ export function listDockerContainers(): DockerContainer[] {
   return containers;
 }
 
+export function getContainerLogs(
+  containerId: string,
+  lines: number = 10,
+): string[] {
+  const proc = spawnSync(
+    "docker",
+    ["logs", "--tail", String(lines), containerId],
+    { encoding: "utf8", timeout: 3000 },
+  );
+  if (proc.error) return [];
+  const merged = (proc.stdout ?? "") + (proc.stderr ?? "");
+  const all = merged.split("\n");
+  while (all.length > 0 && all[all.length - 1]!.trim() === "") all.pop();
+  return all.slice(-lines);
+}
+
 export function stopDockerContainer(
   containerId: string,
   mode: "stop" | "kill" = "stop",
