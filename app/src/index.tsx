@@ -676,7 +676,9 @@ function Row({
       <text fg={C.textDim} width={10}>
         {label}
       </text>
-      <text fg={valueFg ?? C.text}>{value}</text>
+      <box flexGrow={1} backgroundColor={C.bg}>
+        <text fg={valueFg ?? C.text}>{value}</text>
+      </box>
     </box>
   );
 }
