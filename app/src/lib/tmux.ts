@@ -64,6 +64,22 @@ export function capturePane(target: string, lines: number = 10): string[] {
   return all.slice(-lines);
 }
 
+export function switchToPane(pane: TmuxPane): { ok: boolean; error?: string } {
+  const paneTarget = `${pane.session}:${pane.windowIndex}.${pane.paneIndex}`;
+  const winTarget = `${pane.session}:${pane.windowIndex}`;
+
+  spawnSync("tmux", ["select-pane", "-t", paneTarget], { encoding: "utf8" });
+  spawnSync("tmux", ["select-window", "-t", winTarget], { encoding: "utf8" });
+  const r = spawnSync("tmux", ["switch-client", "-t", pane.session], {
+    encoding: "utf8",
+  });
+  if (r.status === 0) return { ok: true };
+  return {
+    ok: false,
+    error: (r.stderr || r.error?.message || "unknown").toString().trim(),
+  };
+}
+
 export function findTmuxPaneForPid(
   pid: number,
   panes: TmuxPane[],

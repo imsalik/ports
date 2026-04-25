@@ -16,6 +16,7 @@ import {
   capturePane,
   findTmuxPaneForPid,
   listTmuxPanes,
+  switchToPane,
   type TmuxPane,
 } from "./lib/tmux";
 import { getProcessInfo, type ProcessInfo } from "./lib/process";
@@ -121,6 +122,15 @@ function App() {
     setSelectedIndex(Math.max(0, Math.min(visiblePorts.length - 1, idx)));
   };
   const toggleHidden = () => setShowUnknown((s) => !s);
+  const gotoPane = () => {
+    if (!tmuxPane) return;
+    const r = switchToPane(tmuxPane);
+    if (r.ok) {
+      renderer.destroy();
+    } else {
+      setStatus({ kind: "error", text: `tmux: ${r.error ?? "switch failed"}` });
+    }
+  };
   const doRefresh = () => {
     refresh();
     setStatus({ kind: "info", text: "refreshed" });
@@ -219,6 +229,11 @@ function App() {
       case "h":
         toggleHidden();
         return;
+      case "enter":
+      case "return":
+      case "g":
+        gotoPane();
+        return;
       case "x":
         requestKill(key.shift ? "SIGKILL" : "SIGTERM");
         return;
@@ -261,6 +276,7 @@ function App() {
           paneWidth={Math.max(20, dims.width - 60)}
           onSelect={selectIndex}
           onToggleHidden={toggleHidden}
+          onGoto={gotoPane}
           onScroll={(dir, delta) =>
             navigate((dir === "up" ? -1 : 1) * Math.max(1, delta))
           }
@@ -278,11 +294,13 @@ function App() {
         status={status}
         canKill={!!(selected?.pid || (selected && dockerIdx.has(selected.port)))}
         canToggleHidden={hiddenCount > 0 || showUnknown}
+        canGoto={!!tmuxPane}
         showUnknown={showUnknown}
         onRefresh={doRefresh}
         onKill={() => requestKill("SIGTERM")}
         onForceKill={() => requestKill("SIGKILL")}
         onToggleHidden={toggleHidden}
+        onGoto={gotoPane}
         onQuit={() => renderer.destroy()}
       />
     </box>
@@ -317,6 +335,7 @@ function Body({
   paneWidth,
   onSelect,
   onToggleHidden,
+  onGoto,
   onScroll,
 }: {
   visible: PortEntry[];
@@ -335,6 +354,7 @@ function Body({
   paneWidth: number;
   onSelect: (idx: number) => void;
   onToggleHidden: () => void;
+  onGoto: () => void;
   onScroll: (dir: "up" | "down", delta: number) => void;
 }) {
   return (
@@ -359,6 +379,7 @@ function Body({
         dockerHit={dockerHit}
         dockerLogs={dockerLogs}
         paneWidth={paneWidth}
+        onGoto={onGoto}
       />
     </box>
   );
@@ -485,6 +506,7 @@ function Details({
   dockerHit,
   dockerLogs,
   paneWidth,
+  onGoto,
 }: {
   port: PortEntry | null;
   procInfo: ProcessInfo | null;
@@ -493,6 +515,7 @@ function Details({
   dockerHit: DockerPortHit | null;
   dockerLogs: string[];
   paneWidth: number;
+  onGoto: () => void;
 }) {
   return (
     <box
@@ -590,11 +613,13 @@ function Details({
                 label="Window"
                 value={`${tmuxPane.windowIndex}: ${tmuxPane.windowName}`}
               />
-              <Row
-                label="Target"
-                value={`${tmuxPane.session}:${tmuxPane.windowIndex}.${tmuxPane.paneIndex}`}
-                valueFg={C.mustardLight}
-              />
+              <box onMouseDown={onGoto}>
+                <Row
+                  label="Target"
+                  value={`${tmuxPane.session}:${tmuxPane.windowIndex}.${tmuxPane.paneIndex}  ↵ go`}
+                  valueFg={C.mustardLight}
+                />
+              </box>
 
               <box marginTop={1} />
               <text fg={C.mustardDim}>
@@ -754,21 +779,25 @@ function Footer({
   status,
   canKill,
   canToggleHidden,
+  canGoto,
   showUnknown,
   onRefresh,
   onKill,
   onForceKill,
   onToggleHidden,
+  onGoto,
   onQuit,
 }: {
   status: Status | null;
   canKill: boolean;
   canToggleHidden: boolean;
+  canGoto: boolean;
   showUnknown: boolean;
   onRefresh: () => void;
   onKill: () => void;
   onForceKill: () => void;
   onToggleHidden: () => void;
+  onGoto: () => void;
   onQuit: () => void;
 }) {
   return (
@@ -784,6 +813,9 @@ function Footer({
       <box flexDirection="row" gap={2}>
         <Key k="↑↓" desc="nav" />
         <Key k="r" desc="refresh" onClick={onRefresh} />
+        {canGoto && (
+          <Key k="↵" desc="go to pane" onClick={onGoto} />
+        )}
         <Key
           k="x"
           desc="kill TERM"
