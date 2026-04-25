@@ -591,10 +591,6 @@ function Details({
                 value={`${tmuxPane.windowIndex}: ${tmuxPane.windowName}`}
               />
               <Row
-                label="Pane"
-                value={`${tmuxPane.paneId} (${tmuxPane.command})`}
-              />
-              <Row
                 label="Target"
                 value={`${tmuxPane.session}:${tmuxPane.windowIndex}.${tmuxPane.paneIndex}`}
                 valueFg={C.mustardLight}
