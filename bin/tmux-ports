@@ -21,4 +21,16 @@ if [[ ! -d "$APP_DIR" ]]; then
 fi
 
 cd "$APP_DIR"
+
+# First-run install (TPM doesn't do this for us).
+if [[ ! -d node_modules ]]; then
+  printf '\033[33mports-tui: first run, installing dependencies...\033[0m\n'
+  if ! bun install; then
+    printf '\033[31mports-tui: bun install failed\033[0m\n'
+    read -n 1 -s -r -p "press any key to close..."
+    exit 1
+  fi
+  printf '\n'
+fi
+
 exec bun run src/index.tsx
