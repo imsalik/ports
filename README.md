@@ -6,29 +6,41 @@ A small TUI for inspecting and killing whatever's listening on your local ports 
 
 I run a lot of local servers, especially now that coding agents spin them up in parallel. I wanted a quick way to see what's bound to what port, where it's running (which tmux pane / which container), and kill it without leaving the terminal. This is that.
 
-## install
+## install (tmux plugin)
 
 ```tmux
 set -g @plugin 'imsalik/ports'
 ```
 
-`prefix + I` to install via TPM, then once:
+`prefix + I` to install via TPM. `prefix + p` opens the popup. Deps install themselves on first run.
 
-```bash
-cd ~/.tmux/plugins/ports/app && bun install
-```
-
-`prefix + p` opens the popup.
-
-### manual
+### manual bind
 
 ```bash
 git clone https://github.com/imsalik/ports ~/code/ports
-(cd ~/code/ports/app && bun install)
 ```
 
 ```tmux
-bind-key p display-popup -E -w 95% -h 90% '~/code/ports/bin/tmux-ports'
+bind-key p display-popup -E -w 95% -h 90% '~/code/ports/bin/ports'
+```
+
+## install (standalone CLI)
+
+```bash
+git clone https://github.com/imsalik/ports.git ~/.local/share/ports
+ln -s ~/.local/share/ports/bin/ports ~/.local/bin/ports
+```
+
+Make sure `~/.local/bin` is on your `$PATH` (most setups already have it). Then run `ports` from any shell. Deps install themselves on first run.
+
+To update later: `git -C ~/.local/share/ports pull`.
+
+### already have it via TPM?
+
+Skip the clone — just symlink the TPM copy:
+
+```bash
+ln -s ~/.tmux/plugins/ports/bin/ports ~/.local/bin/ports
 ```
 
 ## keys

@@ -3,7 +3,7 @@
 # Sourced once at tmux startup (by TPM or directly via run-shell).
 
 CURRENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LAUNCHER="$CURRENT_DIR/bin/tmux-ports"
+LAUNCHER="$CURRENT_DIR/bin/ports"
 
 # User-tunable options (set in .tmux.conf):
 #   set -g @ports-key "o"          # default key
