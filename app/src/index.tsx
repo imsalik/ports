@@ -27,18 +27,9 @@ import {
   stopDockerContainer,
   type DockerPortHit,
 } from "./lib/docker";
+import { loadTheme } from "./lib/theme";
 
-const C = {
-  mustard: "#D4A017",
-  mustardLight: "#F2C94C",
-  mustardDim: "#8A6D14",
-  bg: "#0F0F0F",
-  surface: "#1A1A1A",
-  text: "#E8E0CC",
-  textDim: "#7A7468",
-  danger: "#D86A4A",
-  border: "#3A3530",
-};
+const C = loadTheme();
 
 type View = "list" | "confirm-kill";
 type Status = { kind: "info" | "error"; text: string };
@@ -310,7 +301,7 @@ function App() {
 function Header({ total }: { total: number }) {
   return (
     <box flexDirection="row" marginBottom={1} marginTop={1}>
-      <text fg={C.mustard}>
+      <text fg={C.accent}>
         <strong>▌ PORTS</strong>
         <span fg={C.textDim}> · {total} listening</span>
       </text>
@@ -428,16 +419,16 @@ function PortList({
       }}
     >
       <box flexDirection="row" marginBottom={1}>
-        <text fg={C.mustardDim} width={7}>
+        <text fg={C.accentDim} width={7}>
           PORT
         </text>
-        <text fg={C.mustardDim} width={7}>
+        <text fg={C.accentDim} width={7}>
           PROTO
         </text>
-        <text fg={C.mustardDim} width={9}>
+        <text fg={C.accentDim} width={9}>
           PID
         </text>
-        <text fg={C.mustardDim}>PROCESS</text>
+        <text fg={C.accentDim}>PROCESS</text>
       </box>
 
       {start > 0 && (
@@ -457,12 +448,12 @@ function PortList({
           const dh = dockerIdx.get(p.port);
           const pidLabel = p.pid?.toString() ?? (dh ? "docker" : "?");
           const cmdLabel = p.command ?? (dh ? dh.container.name : "?");
-          const cmdFg = !p.command && dh ? (sel ? C.bg : C.mustardLight) : fg;
+          const cmdFg = !p.command && dh ? (sel ? C.bg : C.accentLight) : fg;
           return (
             <box
               key={`${p.port}-${p.pid ?? "x"}-${p.protocol}`}
               flexDirection="row"
-              backgroundColor={sel ? C.mustard : "transparent"}
+              backgroundColor={sel ? C.accent : "transparent"}
               onMouseDown={() => onSelect(idx)}
             >
               <text fg={fg} width={7}>
@@ -486,8 +477,8 @@ function PortList({
 
       {(hiddenCount > 0 || showUnknown) && (
         <box marginTop={1} onMouseDown={onToggleHidden}>
-          <text fg={C.mustardDim}>
-            <span fg={C.mustard}>
+          <text fg={C.accentDim}>
+            <span fg={C.accent}>
               <u>h</u>
             </span>{" "}
             {showUnknown ? "hide unknown" : `show ${hiddenCount} hidden`}
@@ -534,7 +525,7 @@ function Details({
         </text>
       ) : (
         <>
-          <Row label="Port" value={`${port.port}`} valueFg={C.mustard} />
+          <Row label="Port" value={`${port.port}`} valueFg={C.accent} />
           <Row label="Proto" value={port.protocol} />
           <Row label="Address" value={port.address || "*"} />
           <Row label="PID" value={port.pid?.toString() ?? "?"} />
@@ -545,19 +536,19 @@ function Details({
               port.command ??
               (dockerHit ? `docker: ${dockerHit.container.name}` : "—")
             }
-            valueFg={C.mustardLight}
+            valueFg={C.accentLight}
           />
 
           {dockerHit && (
             <>
               <box marginTop={1} />
-              <text fg={C.mustardDim}>
+              <text fg={C.accentDim}>
                 <strong>━━ docker ━━</strong>
               </text>
               <Row
                 label="Container"
                 value={dockerHit.container.name}
-                valueFg={C.mustard}
+                valueFg={C.accent}
               />
               <Row label="Image" value={dockerHit.container.image} />
               <Row label="ID" value={dockerHit.container.shortId} />
@@ -573,7 +564,7 @@ function Details({
                 <Row
                   label="Project"
                   value={dockerHit.container.composeProject}
-                  valueFg={C.mustardLight}
+                  valueFg={C.accentLight}
                 />
               )}
               {dockerHit.container.composeService && (
@@ -588,7 +579,7 @@ function Details({
           {procInfo && (
             <>
               <box marginTop={1} />
-              <text fg={C.mustardDim}>
+              <text fg={C.accentDim}>
                 <strong>━━ process ━━</strong>
               </text>
               <Row label="Cmdline" value={procInfo.cmdline} />
@@ -601,13 +592,13 @@ function Details({
           {tmuxPane && (
             <>
               <box marginTop={1} />
-              <text fg={C.mustardDim}>
+              <text fg={C.accentDim}>
                 <strong>━━ tmux ━━</strong>
               </text>
               <Row
                 label="Session"
                 value={tmuxPane.session}
-                valueFg={C.mustard}
+                valueFg={C.accent}
               />
               <Row
                 label="Window"
@@ -617,12 +608,12 @@ function Details({
                 <Row
                   label="Target"
                   value={`${tmuxPane.session}:${tmuxPane.windowIndex}.${tmuxPane.paneIndex}  ↵ go`}
-                  valueFg={C.mustardLight}
+                  valueFg={C.accentLight}
                 />
               </box>
 
               <box marginTop={1} />
-              <text fg={C.mustardDim}>
+              <text fg={C.accentDim}>
                 <strong>━━ tail ━━</strong>
               </text>
               <LogBox lines={paneOutput} maxWidth={paneWidth} />
@@ -632,7 +623,7 @@ function Details({
           {dockerHit && (
             <>
               <box marginTop={1} />
-              <text fg={C.mustardDim}>
+              <text fg={C.accentDim}>
                 <strong>━━ tail ━━</strong>
               </text>
               <LogBox lines={dockerLogs} maxWidth={paneWidth} />
@@ -657,7 +648,7 @@ function LogBox({
     <box
       border
       borderStyle="single"
-      borderColor={C.mustardDim}
+      borderColor={C.accentDim}
       backgroundColor={C.surface}
       paddingX={1}
       flexDirection="column"
@@ -671,7 +662,7 @@ function LogBox({
           const trimmed =
             line.length > inner ? line.slice(0, inner - 1) + "…" : line;
           return (
-            <text key={i} fg={C.mustardLight}>
+            <text key={i} fg={C.accentLight}>
               {trimmed || " "}
             </text>
           );
@@ -741,12 +732,12 @@ function ConfirmKill({
         </text>
         <box marginTop={1} />
         <text fg={C.text}>
-          run <span fg={C.mustardLight}>{action}</span> on{" "}
-          <span fg={C.mustard}>{target}</span>?
+          run <span fg={C.accentLight}>{action}</span> on{" "}
+          <span fg={C.accent}>{target}</span>?
         </text>
         <text fg={C.textDim}>
           listening on port{" "}
-          <span fg={C.mustard}>{String(port?.port ?? "")}</span>
+          <span fg={C.accent}>{String(port?.port ?? "")}</span>
         </text>
         <box marginTop={1} flexDirection="row" gap={2}>
           <box
@@ -803,7 +794,7 @@ function Footer({
   return (
     <box flexDirection="column" marginTop={1}>
       {status ? (
-        <text fg={status.kind === "error" ? C.danger : C.mustardDim}>
+        <text fg={status.kind === "error" ? C.danger : C.accentDim}>
           {status.kind === "error" ? "✗ " : "✓ "}
           {status.text}
         </text>
@@ -852,8 +843,8 @@ function Key({
   onClick?: () => void;
   enabled?: boolean;
 }) {
-  const fg = enabled ? C.mustard : C.mustardDim;
-  const descFg = enabled ? C.textDim : C.mustardDim;
+  const fg = enabled ? C.accent : C.accentDim;
+  const descFg = enabled ? C.textDim : C.accentDim;
   return (
     <box onMouseDown={enabled && onClick ? onClick : undefined}>
       <text>

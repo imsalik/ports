@@ -6,10 +6,11 @@ CURRENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LAUNCHER="$CURRENT_DIR/bin/ports"
 
 # User-tunable options (set in .tmux.conf):
-#   set -g @ports-key "o"          # default key
+#   set -g @ports-key "p"          # default key
 #   set -g @ports-no-prefix "off"  # set "on" to bind without prefix
 #   set -g @ports-popup-width "95%"
 #   set -g @ports-popup-height "90%"
+#   set -g @ports-theme "mustard"  # mustard | dracula | gruvbox | nord | mono
 get_opt() {
   local val
   val=$(tmux show-option -gqv "$1")
