@@ -2,6 +2,8 @@
 
 A small TUI for inspecting and killing whatever's listening on your local ports — tmux- and Docker-aware.
 
+<img width="1797" height="919" alt="image" src="https://github.com/user-attachments/assets/223ca98a-f23b-4e10-b956-ed6ccae2f68d" />
+
 ## why
 
 I run a lot of local servers, especially now that coding agents spin them up in parallel. I wanted a quick way to see what's bound to what port, where it's running (which tmux pane / which container), and kill it without leaving the terminal. This is that.
