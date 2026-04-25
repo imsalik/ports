@@ -59,8 +59,11 @@ function App() {
   const [showUnknown, setShowUnknown] = useState(false);
 
   const visiblePorts = useMemo(
-    () => (showUnknown ? ports : ports.filter((p) => p.pid !== null)),
-    [ports, showUnknown],
+    () =>
+      showUnknown
+        ? ports
+        : ports.filter((p) => p.pid !== null || dockerIdx.has(p.port)),
+    [ports, showUnknown, dockerIdx],
   );
   const hiddenCount = ports.length - visiblePorts.length;
 
@@ -468,9 +471,7 @@ function PortList({
             <span fg={C.mustard}>
               <u>h</u>
             </span>{" "}
-            {showUnknown
-              ? "hide rows without pid"
-              : `show ${hiddenCount} hidden`}
+            {showUnknown ? "hide unknown" : `show ${hiddenCount} hidden`}
           </text>
         </box>
       )}
