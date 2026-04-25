@@ -258,7 +258,7 @@ function App() {
           dockerHit={dockerHit}
           dockerLogs={dockerLogs}
           dockerIdx={dockerIdx}
-          paneWidth={Math.max(20, dims.width - 50)}
+          paneWidth={Math.max(20, dims.width - 60)}
           onSelect={selectIndex}
           onToggleHidden={toggleHidden}
           onScroll={(dir, delta) =>
@@ -391,7 +391,7 @@ function PortList({
   return (
     <box
       flexDirection="column"
-      width={44}
+      width={54}
       border
       borderColor={C.border}
       borderStyle="single"
@@ -407,20 +407,20 @@ function PortList({
       }}
     >
       <box flexDirection="row" marginBottom={1}>
-        <text fg={C.mustardDim} width={8}>
+        <text fg={C.mustardDim} width={7}>
           PORT
         </text>
-        <text fg={C.mustardDim} width={6}>
+        <text fg={C.mustardDim} width={7}>
           PROTO
         </text>
-        <text fg={C.mustardDim} width={8}>
+        <text fg={C.mustardDim} width={9}>
           PID
         </text>
         <text fg={C.mustardDim}>PROCESS</text>
       </box>
 
       {start > 0 && (
-        <text fg={C.textDim}>{`  ↑ ${start} more`}</text>
+        <text fg={C.textDim}>{`↑ ${start} more`}</text>
       )}
 
       {visible.length === 0 ? (
@@ -444,14 +444,13 @@ function PortList({
               backgroundColor={sel ? C.mustard : "transparent"}
               onMouseDown={() => onSelect(idx)}
             >
-              <text fg={fg} width={8}>
-                {sel ? "▶ " : "  "}
-                {String(p.port).padEnd(6)}
+              <text fg={fg} width={7}>
+                {String(p.port)}
               </text>
-              <text fg={dimFg} width={6}>
+              <text fg={dimFg} width={7}>
                 {p.protocol}
               </text>
-              <text fg={dimFg} width={8}>
+              <text fg={dimFg} width={9}>
                 {pidLabel}
               </text>
               <text fg={cmdFg}>{cmdLabel}</text>
@@ -461,13 +460,12 @@ function PortList({
       )}
 
       {more > 0 && (
-        <text fg={C.textDim}>{`  ↓ ${more} more`}</text>
+        <text fg={C.textDim}>{`↓ ${more} more`}</text>
       )}
 
       {(hiddenCount > 0 || showUnknown) && (
         <box marginTop={1} onMouseDown={onToggleHidden}>
           <text fg={C.mustardDim}>
-            {"  "}
             <span fg={C.mustard}>
               <u>h</u>
             </span>{" "}
