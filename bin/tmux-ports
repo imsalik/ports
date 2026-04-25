@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+APP_DIR="$(cd "$SCRIPT_DIR/.." && pwd)/app"
+
+# Make sure bun is reachable inside non-login tmux popup shells.
+export PATH="$HOME/.bun/bin:$HOME/.local/bin:/usr/local/bin:$PATH"
+
+if ! command -v bun >/dev/null 2>&1; then
+  printf '\033[31mports-tui: `bun` not found in PATH\033[0m\n'
+  printf 'install bun: https://bun.sh\n\n'
+  read -n 1 -s -r -p "press any key to close..."
+  exit 1
+fi
+
+if [[ ! -d "$APP_DIR" ]]; then
+  printf '\033[31mports-tui: app directory not found at %s\033[0m\n' "$APP_DIR"
+  read -n 1 -s -r -p "press any key to close..."
+  exit 1
+fi
+
+cd "$APP_DIR"
+exec bun run src/index.tsx
