@@ -56,6 +56,13 @@ function App() {
   const [signal, setSignal] = useState<"SIGTERM" | "SIGKILL">("SIGTERM");
   const [status, setStatus] = useState<Status | null>(null);
   const [tick, setTick] = useState(0);
+  const [showUnknown, setShowUnknown] = useState(false);
+
+  const visiblePorts = useMemo(
+    () => (showUnknown ? ports : ports.filter((p) => p.pid !== null)),
+    [ports, showUnknown],
+  );
+  const hiddenCount = ports.length - visiblePorts.length;
 
   const refresh = () => {
     setPorts(listListeningPorts());
@@ -69,12 +76,12 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (selectedIndex >= ports.length) {
-      setSelectedIndex(Math.max(0, ports.length - 1));
+    if (selectedIndex >= visiblePorts.length) {
+      setSelectedIndex(Math.max(0, visiblePorts.length - 1));
     }
-  }, [ports.length, selectedIndex]);
+  }, [visiblePorts.length, selectedIndex]);
 
-  const selected = ports[selectedIndex] ?? null;
+  const selected = visiblePorts[selectedIndex] ?? null;
 
   const procInfo = useMemo<ProcessInfo | null>(() => {
     if (!selected?.pid) return null;
@@ -104,12 +111,13 @@ function App() {
 
   const navigate = (delta: number) => {
     setSelectedIndex((i) =>
-      Math.max(0, Math.min(Math.max(0, ports.length - 1), i + delta)),
+      Math.max(0, Math.min(Math.max(0, visiblePorts.length - 1), i + delta)),
     );
   };
   const selectIndex = (idx: number) => {
-    setSelectedIndex(Math.max(0, Math.min(ports.length - 1, idx)));
+    setSelectedIndex(Math.max(0, Math.min(visiblePorts.length - 1, idx)));
   };
+  const toggleHidden = () => setShowUnknown((s) => !s);
   const doRefresh = () => {
     refresh();
     setStatus({ kind: "info", text: "refreshed" });
@@ -200,10 +208,13 @@ function App() {
         setSelectedIndex(0);
         return;
       case "end":
-        setSelectedIndex(Math.max(0, ports.length - 1));
+        setSelectedIndex(Math.max(0, visiblePorts.length - 1));
         return;
       case "r":
         doRefresh();
+        return;
+      case "h":
+        toggleHidden();
         return;
       case "x":
         requestKill(key.shift ? "SIGKILL" : "SIGTERM");
@@ -213,12 +224,12 @@ function App() {
 
   const visibleCount = Math.max(5, dims.height - 14);
   const half = Math.floor(visibleCount / 2);
-  const maxStart = Math.max(0, ports.length - visibleCount);
+  const maxStart = Math.max(0, visiblePorts.length - visibleCount);
   const start = Math.max(
     0,
     Math.min(maxStart, selectedIndex - half),
   );
-  const visible = ports.slice(start, start + visibleCount);
+  const visible = visiblePorts.slice(start, start + visibleCount);
 
   return (
     <box
@@ -228,12 +239,14 @@ function App() {
       paddingX={1}
       paddingY={0}
     >
-      <Header total={ports.length} />
+      <Header total={visiblePorts.length} />
       {view === "list" ? (
         <Body
           visible={visible}
           start={start}
-          total={ports.length}
+          total={visiblePorts.length}
+          hiddenCount={hiddenCount}
+          showUnknown={showUnknown}
           selectedIndex={selectedIndex}
           selected={selected}
           procInfo={procInfo}
@@ -244,6 +257,7 @@ function App() {
           dockerIdx={dockerIdx}
           paneWidth={Math.max(20, dims.width - 50)}
           onSelect={selectIndex}
+          onToggleHidden={toggleHidden}
           onScroll={(dir, delta) =>
             navigate((dir === "up" ? -1 : 1) * Math.max(1, delta))
           }
@@ -260,9 +274,12 @@ function App() {
       <Footer
         status={status}
         canKill={!!(selected?.pid || (selected && dockerIdx.has(selected.port)))}
+        canToggleHidden={hiddenCount > 0 || showUnknown}
+        showUnknown={showUnknown}
         onRefresh={doRefresh}
         onKill={() => requestKill("SIGTERM")}
         onForceKill={() => requestKill("SIGKILL")}
+        onToggleHidden={toggleHidden}
         onQuit={() => renderer.destroy()}
       />
     </box>
@@ -271,17 +288,11 @@ function App() {
 
 function Header({ total }: { total: number }) {
   return (
-    <box
-      flexDirection="row"
-      justifyContent="space-between"
-      marginBottom={1}
-      marginTop={1}
-    >
+    <box flexDirection="row" marginBottom={1} marginTop={1}>
       <text fg={C.mustard}>
         <strong>▌ PORTS</strong>
         <span fg={C.textDim}> · {total} listening</span>
       </text>
-      <text fg={C.mustardDim}>opentui · ss · tmux</text>
     </box>
   );
 }
@@ -290,6 +301,8 @@ function Body({
   visible,
   start,
   total,
+  hiddenCount,
+  showUnknown,
   selectedIndex,
   selected,
   procInfo,
@@ -300,11 +313,14 @@ function Body({
   dockerIdx,
   paneWidth,
   onSelect,
+  onToggleHidden,
   onScroll,
 }: {
   visible: PortEntry[];
   start: number;
   total: number;
+  hiddenCount: number;
+  showUnknown: boolean;
   selectedIndex: number;
   selected: PortEntry | null;
   procInfo: ProcessInfo | null;
@@ -315,6 +331,7 @@ function Body({
   dockerIdx: Map<number, DockerPortHit>;
   paneWidth: number;
   onSelect: (idx: number) => void;
+  onToggleHidden: () => void;
   onScroll: (dir: "up" | "down", delta: number) => void;
 }) {
   return (
@@ -323,9 +340,12 @@ function Body({
         visible={visible}
         start={start}
         total={total}
+        hiddenCount={hiddenCount}
+        showUnknown={showUnknown}
         selectedIndex={selectedIndex}
         dockerIdx={dockerIdx}
         onSelect={onSelect}
+        onToggleHidden={onToggleHidden}
         onScroll={onScroll}
       />
       <Details
@@ -345,17 +365,23 @@ function PortList({
   visible,
   start,
   total,
+  hiddenCount,
+  showUnknown,
   selectedIndex,
   dockerIdx,
   onSelect,
+  onToggleHidden,
   onScroll,
 }: {
   visible: PortEntry[];
   start: number;
   total: number;
+  hiddenCount: number;
+  showUnknown: boolean;
   selectedIndex: number;
   dockerIdx: Map<number, DockerPortHit>;
   onSelect: (idx: number) => void;
+  onToggleHidden: () => void;
   onScroll: (dir: "up" | "down", delta: number) => void;
 }) {
   const more = total - (start + visible.length);
@@ -387,7 +413,7 @@ function PortList({
         <text fg={C.mustardDim} width={8}>
           PID
         </text>
-        <text fg={C.mustardDim}>COMMAND</text>
+        <text fg={C.mustardDim}>PROCESS</text>
       </box>
 
       {start > 0 && (
@@ -433,6 +459,20 @@ function PortList({
 
       {more > 0 && (
         <text fg={C.textDim}>{`  ↓ ${more} more`}</text>
+      )}
+
+      {(hiddenCount > 0 || showUnknown) && (
+        <box marginTop={1} onMouseDown={onToggleHidden}>
+          <text fg={C.mustardDim}>
+            {"  "}
+            <span fg={C.mustard}>
+              <u>h</u>
+            </span>{" "}
+            {showUnknown
+              ? "hide rows without pid"
+              : `show ${hiddenCount} hidden`}
+          </text>
+        </box>
       )}
     </box>
   );
@@ -563,7 +603,7 @@ function Details({
 
               <box marginTop={1} />
               <text fg={C.mustardDim}>
-                <strong>━━ pane output ━━</strong>
+                <strong>━━ tail ━━</strong>
               </text>
               <LogBox lines={paneOutput} maxWidth={paneWidth} />
             </>
@@ -573,7 +613,7 @@ function Details({
             <>
               <box marginTop={1} />
               <text fg={C.mustardDim}>
-                <strong>━━ docker logs ━━</strong>
+                <strong>━━ tail ━━</strong>
               </text>
               <LogBox lines={dockerLogs} maxWidth={paneWidth} />
             </>
@@ -716,16 +756,22 @@ function ConfirmKill({
 function Footer({
   status,
   canKill,
+  canToggleHidden,
+  showUnknown,
   onRefresh,
   onKill,
   onForceKill,
+  onToggleHidden,
   onQuit,
 }: {
   status: Status | null;
   canKill: boolean;
+  canToggleHidden: boolean;
+  showUnknown: boolean;
   onRefresh: () => void;
   onKill: () => void;
   onForceKill: () => void;
+  onToggleHidden: () => void;
   onQuit: () => void;
 }) {
   return (
@@ -753,6 +799,13 @@ function Footer({
           onClick={onForceKill}
           enabled={canKill}
         />
+        {canToggleHidden && (
+          <Key
+            k="h"
+            desc={showUnknown ? "hide unknown" : "show all"}
+            onClick={onToggleHidden}
+          />
+        )}
         <Key k="q" desc="quit" onClick={onQuit} />
       </box>
     </box>
