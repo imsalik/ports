@@ -59,7 +59,7 @@ set -g @ports-key "p"
 set -g @ports-no-prefix "off"
 set -g @ports-popup-width "95%"
 set -g @ports-popup-height "90%"
-set -g @ports-theme "mustard"     # mustard | dracula | gruvbox | nord | mono
+set -g @ports-theme "mustard"     # mustard | dracula | gruvbox | nord | catppuccin | mono
 ```
 
 Standalone CLI: same theme via `PORTS_THEME=dracula ports`.

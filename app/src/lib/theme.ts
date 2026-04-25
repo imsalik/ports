@@ -46,6 +46,17 @@ export const themes: Record<string, Theme> = {
     accentDim: "#7C6F64",
     danger: "#CC241D",
   },
+  catppuccin: {
+    bg: "#1E1E2E",
+    surface: "#313244",
+    border: "#45475A",
+    text: "#CDD6F4",
+    textDim: "#6C7086",
+    accent: "#CBA6F7",
+    accentLight: "#F5C2E7",
+    accentDim: "#7F849C",
+    danger: "#F38BA8",
+  },
   nord: {
     bg: "#2E3440",
     surface: "#3B4252",
