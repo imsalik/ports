@@ -10,7 +10,11 @@ export interface ProcessInfo {
   user: string | null;
 }
 
-function readPpid(pid: number): number | null {
+const IS_DARWIN = process.platform === "darwin";
+
+// ---------- Linux (/proc) ----------
+
+function readPpidLinux(pid: number): number | null {
   try {
     const stat = fs.readFileSync(`/proc/${pid}/stat`, "utf8");
     const lastParen = stat.lastIndexOf(")");
@@ -35,7 +39,7 @@ function lookupUser(uid: string): string | null {
   return null;
 }
 
-export function getProcessInfo(pid: number): ProcessInfo | null {
+function getProcessInfoLinux(pid: number): ProcessInfo | null {
   let cmdline = "";
   try {
     const raw = fs.readFileSync(`/proc/${pid}/cmdline`, "utf8");
@@ -54,7 +58,7 @@ export function getProcessInfo(pid: number): ProcessInfo | null {
     cwd = fs.readlinkSync(`/proc/${pid}/cwd`);
   } catch {}
 
-  const ppid = readPpid(pid);
+  const ppid = readPpidLinux(pid);
 
   let user: string | null = null;
   try {
@@ -76,14 +80,100 @@ export function getProcessInfo(pid: number): ProcessInfo | null {
   };
 }
 
-export function getAncestorPids(pid: number, maxDepth = 30): number[] {
+function getAncestorPidsLinux(pid: number, maxDepth = 30): number[] {
   const ancestors: number[] = [];
   let current = pid;
   for (let i = 0; i < maxDepth; i++) {
-    const ppid = readPpid(current);
+    const ppid = readPpidLinux(current);
     if (ppid === null || ppid <= 1) break;
     ancestors.push(ppid);
     current = ppid;
   }
   return ancestors;
+}
+
+// ---------- Darwin (ps + lsof) ----------
+
+function psField(pid: number, fmt: string): string | null {
+  const r = spawnSync("ps", ["-ww", "-o", `${fmt}=`, "-p", String(pid)], {
+    encoding: "utf8",
+  });
+  if (r.status !== 0) return null;
+  const s = r.stdout.replace(/\n$/, "");
+  return s.length ? s : null;
+}
+
+function readPpidDarwin(pid: number): number | null {
+  const s = psField(pid, "ppid");
+  if (!s) return null;
+  const n = Number.parseInt(s.trim(), 10);
+  return Number.isFinite(n) ? n : null;
+}
+
+function readCwdDarwin(pid: number): string | null {
+  // -a AND -d cwd -p <pid>; -Fn => "p<pid>\nn<cwd>"
+  const r = spawnSync(
+    "lsof",
+    ["-a", "-d", "cwd", "-Fn", "-p", String(pid)],
+    { encoding: "utf8" },
+  );
+  if (r.status !== 0 && r.status !== 1) return null;
+  for (const line of r.stdout.split("\n")) {
+    if (line.startsWith("n")) return line.substring(1);
+  }
+  return null;
+}
+
+function getProcessInfoDarwin(pid: number): ProcessInfo | null {
+  // Single batched ps call for the simple fields.
+  // Format: "<ppid> <user> <comm>" — comm is last so any spaces in path stay intact.
+  const r = spawnSync(
+    "ps",
+    ["-ww", "-o", "ppid=,user=,comm=", "-p", String(pid)],
+    { encoding: "utf8" },
+  );
+  if (r.status !== 0 || !r.stdout.trim()) return null;
+
+  const line = r.stdout.replace(/\n$/, "").trimStart();
+  const m = line.match(/^(\d+)\s+(\S+)\s+(.+)$/);
+  if (!m) return null;
+  const ppid = Number.parseInt(m[1]!, 10);
+  const user = m[2]!;
+  const exe = m[3]!;
+
+  const cmdline = psField(pid, "args") ?? exe;
+  const cwd = readCwdDarwin(pid);
+
+  return {
+    pid,
+    ppid: Number.isFinite(ppid) ? ppid : null,
+    cmdline: cmdline || "(unknown)",
+    exe,
+    cwd,
+    user,
+  };
+}
+
+function getAncestorPidsDarwin(pid: number, maxDepth = 30): number[] {
+  const ancestors: number[] = [];
+  let current = pid;
+  for (let i = 0; i < maxDepth; i++) {
+    const ppid = readPpidDarwin(current);
+    if (ppid === null || ppid <= 1) break;
+    ancestors.push(ppid);
+    current = ppid;
+  }
+  return ancestors;
+}
+
+// ---------- Dispatch ----------
+
+export function getProcessInfo(pid: number): ProcessInfo | null {
+  return IS_DARWIN ? getProcessInfoDarwin(pid) : getProcessInfoLinux(pid);
+}
+
+export function getAncestorPids(pid: number, maxDepth = 30): number[] {
+  return IS_DARWIN
+    ? getAncestorPidsDarwin(pid, maxDepth)
+    : getAncestorPidsLinux(pid, maxDepth);
 }

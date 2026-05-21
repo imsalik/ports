@@ -39,7 +39,7 @@ function parseSsLine(line: string): PortEntry | null {
   };
 }
 
-export function listListeningPorts(): PortEntry[] {
+function listListeningPortsLinux(): PortEntry[] {
   const proc = spawnSync("ss", ["-tlnpH"], { encoding: "utf8" });
   if (proc.status !== 0) return [];
 
@@ -61,6 +61,84 @@ export function listListeningPorts(): PortEntry[] {
   const entries = [...map.values()];
   entries.sort((a, b) => a.port - b.port || (a.pid ?? 0) - (b.pid ?? 0));
   return entries;
+}
+
+function listListeningPortsDarwin(): PortEntry[] {
+  // -n: no DNS, -P: numeric ports, -FpcPnT: tagged-line output (pid, cmd, proto, name, tcp-info)
+  const proc = spawnSync(
+    "lsof",
+    ["-nP", "-iTCP", "-sTCP:LISTEN", "-FpcPnT"],
+    { encoding: "utf8" },
+  );
+  // lsof exits 1 when some pids are inaccessible but still emits useful data
+  if (proc.status !== 0 && proc.status !== 1) return [];
+
+  const map = new Map<string, PortEntry>();
+  let pid: number | null = null;
+  let cmd: string | null = null;
+  let name: string | null = null;
+
+  const flush = () => {
+    if (pid === null || !name) return;
+    const isV6 = name.startsWith("[");
+    const lastColon = name.lastIndexOf(":");
+    if (lastColon < 0) return;
+    const port = Number.parseInt(name.substring(lastColon + 1), 10);
+    if (!Number.isFinite(port)) return;
+    let address = name.substring(0, lastColon);
+    if (address === "*") address = isV6 ? "[::]" : "0.0.0.0";
+
+    const entry: PortEntry = {
+      port,
+      protocol: isV6 ? "tcp6" : "tcp",
+      address,
+      pid,
+      command: cmd,
+    };
+    const key = `${port}::${pid}::${cmd ?? "?"}`;
+    const existing = map.get(key);
+    if (existing) {
+      if (existing.protocol !== entry.protocol) existing.protocol = "tcp46";
+    } else {
+      map.set(key, entry);
+    }
+  };
+
+  for (const line of proc.stdout.split("\n")) {
+    if (!line) continue;
+    const tag = line[0];
+    const val = line.substring(1);
+    switch (tag) {
+      case "p":
+        flush();
+        pid = Number.parseInt(val, 10);
+        cmd = null;
+        name = null;
+        break;
+      case "c":
+        cmd = val;
+        break;
+      case "f":
+        flush();
+        name = null;
+        break;
+      case "n":
+        name = val;
+        break;
+      // "P" (protocol) and "T" (TCP info) lines ignored — we already filtered LISTEN TCP
+    }
+  }
+  flush();
+
+  const entries = [...map.values()];
+  entries.sort((a, b) => a.port - b.port || (a.pid ?? 0) - (b.pid ?? 0));
+  return entries;
+}
+
+export function listListeningPorts(): PortEntry[] {
+  return process.platform === "darwin"
+    ? listListeningPortsDarwin()
+    : listListeningPortsLinux();
 }
 
 export function killProcess(
