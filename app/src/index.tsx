@@ -902,7 +902,7 @@ function ConfirmKill({
         flexDirection="column"
       >
         <text fg={C.danger}>
-          <strong>⚠  CONFIRM</strong>
+          <strong>▌ CONFIRM</strong>
         </text>
         <box marginTop={1} />
         <text fg={C.text}>
