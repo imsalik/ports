@@ -1,4 +1,4 @@
-import { createCliRenderer } from "@opentui/core";
+import { createCliRenderer, type KeyEvent } from "@opentui/core";
 import {
   createRoot,
   useKeyboard,
@@ -28,11 +28,34 @@ import {
   type DockerPortHit,
 } from "./lib/docker";
 import { loadTheme } from "./lib/theme";
+import { fuzzyScore } from "./lib/fuzzy";
 
 const C = loadTheme();
 
 type View = "list" | "confirm-kill";
 type Status = { kind: "info" | "error"; text: string };
+
+// Flatten a port entry (plus any matching docker container) into a single
+// string the fuzzy matcher can search across.
+function searchHaystack(p: PortEntry, dh?: DockerPortHit): string {
+  const parts: string[] = [
+    String(p.port),
+    p.protocol,
+    p.pid != null ? String(p.pid) : "",
+    p.command ?? "",
+    p.address ?? "",
+  ];
+  if (dh) {
+    parts.push(
+      dh.container.name,
+      dh.container.image,
+      dh.container.shortId,
+      dh.container.composeProject ?? "",
+      dh.container.composeService ?? "",
+    );
+  }
+  return parts.join(" ");
+}
 
 function App() {
   const renderer = useRenderer();
@@ -46,18 +69,37 @@ function App() {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [view, setView] = useState<View>("list");
   const [signal, setSignal] = useState<"SIGTERM" | "SIGKILL">("SIGTERM");
+  const [confirmChoice, setConfirmChoice] = useState<"yes" | "no">("yes");
   const [status, setStatus] = useState<Status | null>(null);
   const [tick, setTick] = useState(0);
   const [showUnknown, setShowUnknown] = useState(false);
+  const [query, setQuery] = useState("");
+  const [searchMode, setSearchMode] = useState(false);
 
-  const visiblePorts = useMemo(
+  const basePorts = useMemo(
     () =>
       showUnknown
         ? ports
         : ports.filter((p) => p.pid !== null || dockerIdx.has(p.port)),
     [ports, showUnknown, dockerIdx],
   );
-  const hiddenCount = ports.length - visiblePorts.length;
+
+  // Fuzzy-filter and rank by score; falls back to the natural port order
+  // when there is no active query.
+  const visiblePorts = useMemo(() => {
+    const q = query.trim();
+    if (!q) return basePorts;
+    const scored: { entry: PortEntry; score: number }[] = [];
+    for (const p of basePorts) {
+      const score = fuzzyScore(q, searchHaystack(p, dockerIdx.get(p.port)));
+      if (score !== null) scored.push({ entry: p, score });
+    }
+    scored.sort((a, b) => b.score - a.score || a.entry.port - b.entry.port);
+    return scored.map((s) => s.entry);
+  }, [basePorts, query, dockerIdx]);
+
+  const baseCount = basePorts.length;
+  const hiddenCount = showUnknown ? 0 : ports.length - baseCount;
 
   const refresh = () => {
     setPorts(listListeningPorts());
@@ -75,6 +117,11 @@ function App() {
       setSelectedIndex(Math.max(0, visiblePorts.length - 1));
     }
   }, [visiblePorts.length, selectedIndex]);
+
+  // Jump back to the top of the result list whenever the query changes.
+  useEffect(() => {
+    setSelectedIndex(0);
+  }, [query]);
 
   const selected = visiblePorts[selectedIndex] ?? null;
 
@@ -129,6 +176,7 @@ function App() {
   const requestKill = (sig: "SIGTERM" | "SIGKILL") => {
     if (selected?.pid || (selected && dockerIdx.has(selected.port))) {
       setSignal(sig);
+      setConfirmChoice("yes"); // default to the highlighted "yes"
       setView("confirm-kill");
     }
   };
@@ -172,8 +220,58 @@ function App() {
     setView("list");
   };
 
+  // Keystrokes while the search input is focused.
+  const handleSearchKey = (key: KeyEvent) => {
+    if (key.name === "escape") {
+      setQuery("");
+      setSearchMode(false);
+      return;
+    }
+    if (key.name === "return" || key.name === "enter") {
+      setSearchMode(false); // confirm: keep the filter, hand focus back to the list
+      return;
+    }
+    if (key.name === "backspace") {
+      setQuery((q) => q.slice(0, -1));
+      return;
+    }
+    if (key.name === "up") {
+      navigate(-1);
+      return;
+    }
+    if (key.name === "down") {
+      navigate(1);
+      return;
+    }
+    if (key.ctrl && key.name === "u") {
+      setQuery("");
+      return;
+    }
+    if (key.ctrl && key.name === "w") {
+      setQuery((q) => q.replace(/\s*\S+\s*$/, ""));
+      return;
+    }
+    // Append printable characters.
+    const ch = key.sequence;
+    if (ch && ch.length === 1 && !key.ctrl && !key.meta) {
+      const code = ch.charCodeAt(0);
+      if (code >= 0x20 && code !== 0x7f) {
+        setQuery((q) => q + ch);
+      }
+    }
+  };
+
   useKeyboard((key) => {
     if (view === "confirm-kill") {
+      if (key.name === "left" || key.name === "right" || key.name === "tab") {
+        setConfirmChoice((c) => (c === "yes" ? "no" : "yes"));
+        return;
+      }
+      if (key.name === "enter" || key.name === "return") {
+        if (confirmChoice === "yes") executeKill();
+        else setView("list");
+        return;
+      }
       if (key.name === "y") {
         executeKill();
         return;
@@ -187,6 +285,16 @@ function App() {
 
     if (key.ctrl && key.name === "c") {
       renderer.destroy();
+      return;
+    }
+
+    if (searchMode) {
+      handleSearchKey(key);
+      return;
+    }
+
+    if (key.name === "/" || key.sequence === "/") {
+      setSearchMode(true);
       return;
     }
 
@@ -228,10 +336,17 @@ function App() {
       case "x":
         requestKill(key.shift ? "SIGKILL" : "SIGTERM");
         return;
+      case "escape":
+        if (query) setQuery("");
+        return;
     }
   });
 
-  const visibleCount = Math.max(5, dims.height - 14);
+  const searchVisible = searchMode || query.length > 0;
+  const visibleCount = Math.max(
+    5,
+    dims.height - 14 - (searchVisible ? 3 : 0),
+  );
   const half = Math.floor(visibleCount / 2);
   const maxStart = Math.max(0, visiblePorts.length - visibleCount);
   const start = Math.max(
@@ -248,7 +363,15 @@ function App() {
       paddingX={1}
       paddingY={0}
     >
-      <Header total={visiblePorts.length} />
+      <Header total={baseCount} />
+      {searchVisible && (
+        <SearchBar
+          query={query}
+          active={searchMode}
+          matched={visiblePorts.length}
+          total={baseCount}
+        />
+      )}
       {view === "list" ? (
         <Body
           visible={visible}
@@ -277,6 +400,8 @@ function App() {
           port={selected}
           signal={signal}
           dockerHit={dockerHit}
+          choice={confirmChoice}
+          onHover={setConfirmChoice}
           onConfirm={executeKill}
           onCancel={() => setView("list")}
         />
@@ -287,7 +412,13 @@ function App() {
         canToggleHidden={hiddenCount > 0 || showUnknown}
         canGoto={!!tmuxPane}
         showUnknown={showUnknown}
+        filtering={query.length > 0}
         onRefresh={doRefresh}
+        onSearch={() => setSearchMode(true)}
+        onClearSearch={() => {
+          setQuery("");
+          setSearchMode(false);
+        }}
         onKill={() => requestKill("SIGTERM")}
         onForceKill={() => requestKill("SIGKILL")}
         onToggleHidden={toggleHidden}
@@ -304,6 +435,42 @@ function Header({ total }: { total: number }) {
       <text fg={C.accent}>
         <strong>▌ PORTS</strong>
         <span fg={C.textDim}> · {total} listening</span>
+      </text>
+    </box>
+  );
+}
+
+function SearchBar({
+  query,
+  active,
+  matched,
+  total,
+}: {
+  query: string;
+  active: boolean;
+  matched: number;
+  total: number;
+}) {
+  return (
+    <box
+      flexDirection="row"
+      border
+      borderStyle="single"
+      borderColor={active ? C.accent : C.border}
+      paddingX={1}
+    >
+      <text fg={C.accent}>
+        <strong>/ </strong>
+      </text>
+      <box flexGrow={1} flexDirection="row">
+        <text fg={C.text}>{query}</text>
+        {active && <text fg={C.accent}>▌</text>}
+        {active && query.length === 0 && (
+          <text fg={C.textDim}> type to filter</text>
+        )}
+      </box>
+      <text fg={matched === 0 ? C.danger : C.textDim}>
+        {matched} / {total}
       </text>
     </box>
   );
@@ -697,12 +864,16 @@ function ConfirmKill({
   port,
   signal,
   dockerHit,
+  choice,
+  onHover,
   onConfirm,
   onCancel,
 }: {
   port: PortEntry | null;
   signal: "SIGTERM" | "SIGKILL";
   dockerHit: DockerPortHit | null;
+  choice: "yes" | "no";
+  onHover: (c: "yes" | "no") => void;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
@@ -715,6 +886,9 @@ function ConfirmKill({
   const target = isDocker
     ? dockerHit.container.name
     : `pid ${port?.pid ?? "?"}${port?.command ? ` (${port.command})` : ""}`;
+
+  const yesSel = choice === "yes";
+  const noSel = choice === "no";
 
   return (
     <box flexGrow={1} alignItems="center" justifyContent="center">
@@ -744,22 +918,31 @@ function ConfirmKill({
             border
             borderStyle="single"
             borderColor={C.danger}
+            backgroundColor={yesSel ? C.danger : "transparent"}
             paddingX={2}
+            onMouseOver={() => onHover("yes")}
             onMouseDown={onConfirm}
           >
-            <text fg={C.danger}>
-              <strong>[y] yes</strong>
+            <text fg={yesSel ? C.surface : C.danger}>
+              <strong>{yesSel ? "▶ " : "  "}[y] yes</strong>
             </text>
           </box>
           <box
             border
             borderStyle="single"
-            borderColor={C.border}
+            borderColor={noSel ? C.accent : C.border}
+            backgroundColor={noSel ? C.accent : "transparent"}
             paddingX={2}
+            onMouseOver={() => onHover("no")}
             onMouseDown={onCancel}
           >
-            <text fg={C.text}>[n] no</text>
+            <text fg={noSel ? C.surface : C.text}>
+              <strong>{noSel ? "▶ " : "  "}[n] no</strong>
+            </text>
           </box>
+        </box>
+        <box marginTop={1}>
+          <text fg={C.textDim}>←→ switch · ↵ confirm · esc cancel</text>
         </box>
       </box>
     </box>
@@ -772,7 +955,10 @@ function Footer({
   canToggleHidden,
   canGoto,
   showUnknown,
+  filtering,
   onRefresh,
+  onSearch,
+  onClearSearch,
   onKill,
   onForceKill,
   onToggleHidden,
@@ -784,7 +970,10 @@ function Footer({
   canToggleHidden: boolean;
   canGoto: boolean;
   showUnknown: boolean;
+  filtering: boolean;
   onRefresh: () => void;
+  onSearch: () => void;
+  onClearSearch: () => void;
   onKill: () => void;
   onForceKill: () => void;
   onToggleHidden: () => void;
@@ -803,6 +992,14 @@ function Footer({
       )}
       <box flexDirection="row" gap={2}>
         <Key k="↑↓" desc="nav" />
+        <Key
+          k="/"
+          desc={filtering ? "edit filter" : "search"}
+          onClick={onSearch}
+        />
+        {filtering && (
+          <Key k="esc" desc="clear" onClick={onClearSearch} />
+        )}
         <Key k="r" desc="refresh" onClick={onRefresh} />
         {canGoto && (
           <Key k="↵" desc="go to pane" onClick={onGoto} />

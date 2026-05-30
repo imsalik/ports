@@ -48,6 +48,7 @@ ln -s ~/.tmux/plugins/ports/bin/ports ~/.local/bin/ports
 ## keys
 
 - `↑↓` / `jk` — navigate (mouse + wheel work too)
+- `/` — fuzzy filter by port, pid, process, or container; `enter` keeps the filter, `esc` clears it
 - `r` — refresh
 - `x` / `X` — kill (SIGTERM / SIGKILL); on a docker port these become `docker stop` / `docker kill`
 - `q` — quit
