@@ -1,5 +1,7 @@
 import { spawnSync } from "node:child_process";
 
+import { loadConfig, saveConfig } from "./config";
+
 export interface Theme {
   bg: string;
   surface: string;
@@ -82,6 +84,8 @@ export const themes: Record<string, Theme> = {
 };
 
 function readTmuxOption(name: string): string | null {
+  // Only worth a spawn when we're actually inside tmux.
+  if (!process.env.TMUX) return null;
   const proc = spawnSync("tmux", ["show-option", "-gqv", name], {
     encoding: "utf8",
     timeout: 500,
@@ -91,8 +95,41 @@ function readTmuxOption(name: string): string | null {
   return v || null;
 }
 
-export function loadTheme(): Theme {
-  const requested =
-    readTmuxOption("@ports-theme") || process.env.PORTS_THEME || "mustard";
-  return themes[requested] ?? themes.mustard!;
+// Resolution order, highest priority first:
+//   PORTS_THEME env     explicit per-launch override
+//   config.theme        the remembered in-app choice (persists, tmux or not)
+//   @ports-theme tmux   the tmux-plugin default
+//   mustard             built-in fallback
+export function resolveThemeName(): string {
+  return (
+    process.env.PORTS_THEME ||
+    loadConfig().theme ||
+    readTmuxOption("@ports-theme") ||
+    "mustard"
+  );
 }
+
+export function loadTheme(): Theme {
+  return themes[resolveThemeName()] ?? themes.mustard!;
+}
+
+// The active theme. Resolved once at startup, but components read C's *fields*
+// at render time, so switching themes in-app is just an in-place field swap
+// (Object.assign) plus a re-render — no prop threading, no reload.
+export const C: Theme = { ...loadTheme() };
+
+// The name currently applied to C, for the UI to highlight the active theme.
+export let currentThemeName = resolveThemeName();
+
+// Apply a theme by name: mutate C in place (so every `C.x` reference updates),
+// remember it in config, and report success. Unknown names are a no-op.
+export function applyTheme(name: string): boolean {
+  const t = themes[name];
+  if (!t) return false;
+  Object.assign(C, t);
+  currentThemeName = name;
+  saveConfig({ theme: name });
+  return true;
+}
+
+export const THEME_NAMES = Object.keys(themes);

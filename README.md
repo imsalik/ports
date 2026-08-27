@@ -50,7 +50,9 @@ ln -s ~/.tmux/plugins/ports/bin/ports ~/.local/bin/ports
 - `↑↓` / `jk` — navigate (mouse + wheel work too)
 - `/` — fuzzy filter by port, pid, process, or container; `enter` keeps the filter, `esc` clears it
 - `r` — refresh
+- `enter` — go to the pane running the process (tmux or herdr)
 - `x` / `X` — kill (SIGTERM / SIGKILL); on a docker port these become `docker stop` / `docker kill`
+- `t` — theme picker; `↑↓` preview, `enter` applies and remembers, `esc` cancels
 - `q` — quit
 
 ## options
@@ -61,13 +63,35 @@ set -g @ports-no-prefix "off"
 set -g @ports-popup-width "95%"
 set -g @ports-popup-height "90%"
 set -g @ports-theme "mustard"     # mustard | dracula | gruvbox | nord | catppuccin | mono
+                                  # (in-app `t` picker overrides this and persists)
 ```
 
 Standalone CLI: same theme via `PORTS_THEME=dracula ports`.
 
+### theme persistence
+
+The `t` picker writes your choice to `~/.config/ports/config.json`, so it sticks
+across launches without tmux. Resolution order, highest priority first:
+`PORTS_THEME` env → saved config → `@ports-theme` (tmux) → `mustard`. Override the
+config path with `$PORTS_CONFIG`.
+
+### herdr
+
+Runs the same as under tmux. Bind it to a popup in `~/.config/herdr/config.toml`:
+
+```toml
+[[keys.command]]
+key = "prefix+shift+p"
+type = "popup"
+command = "ports"
+```
+
+Pane resolution and `enter` (go to pane) work through the `herdr` CLI when running
+inside a Herdr pane, so no tmux server is needed.
+
 ## requirements
 
-Linux (reads `/proc`), tmux 3.2+, [bun](https://bun.sh), `ss` (iproute2). Optional: `docker`, `tmux` for pane resolution.
+Linux (reads `/proc`), [bun](https://bun.sh), `ss` (iproute2). Optional: `docker`; `tmux` (3.2+) or `herdr` for pane resolution and go-to.
 
 ## notes
 

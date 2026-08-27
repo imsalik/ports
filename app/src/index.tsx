@@ -13,12 +13,10 @@ import {
   type PortEntry,
 } from "./lib/ports";
 import {
-  capturePane,
-  findTmuxPaneForPid,
-  listTmuxPanes,
-  switchToPane,
-  type TmuxPane,
-} from "./lib/tmux";
+  getPaneHost,
+  findPaneForPid,
+  type PaneEntry,
+} from "./lib/panes";
 import { getProcessInfo, type ProcessInfo } from "./lib/process";
 import {
   buildDockerPortIndex,
@@ -27,12 +25,17 @@ import {
   stopDockerContainer,
   type DockerPortHit,
 } from "./lib/docker";
-import { loadTheme } from "./lib/theme";
+import {
+  C,
+  applyTheme,
+  currentThemeName,
+  THEME_NAMES,
+} from "./lib/theme";
 import { fuzzyScore } from "./lib/fuzzy";
 
-const C = loadTheme();
+const host = getPaneHost();
 
-type View = "list" | "confirm-kill";
+type View = "list" | "confirm-kill" | "theme";
 type Status = { kind: "info" | "error"; text: string };
 
 // Flatten a port entry (plus any matching docker container) into a single
@@ -62,7 +65,7 @@ function App() {
   const dims = useTerminalDimensions();
 
   const [ports, setPorts] = useState<PortEntry[]>([]);
-  const [panes, setPanes] = useState<TmuxPane[]>([]);
+  const [panes, setPanes] = useState<PaneEntry[]>([]);
   const [dockerIdx, setDockerIdx] = useState<Map<number, DockerPortHit>>(
     new Map(),
   );
@@ -75,6 +78,12 @@ function App() {
   const [showUnknown, setShowUnknown] = useState(false);
   const [query, setQuery] = useState("");
   const [searchMode, setSearchMode] = useState(false);
+  // Theme picker: which row is highlighted, and the theme to restore on cancel.
+  const [themeSel, setThemeSel] = useState(0);
+  const [themePrev, setThemePrev] = useState(currentThemeName);
+  // C is mutated in place by applyTheme; bump this to force a repaint.
+  const [, setThemeTick] = useState(0);
+  const repaint = () => setThemeTick((t) => t + 1);
 
   const basePorts = useMemo(
     () =>
@@ -103,7 +112,7 @@ function App() {
 
   const refresh = () => {
     setPorts(listListeningPorts());
-    setPanes(listTmuxPanes());
+    setPanes(host.list());
     setDockerIdx(buildDockerPortIndex(listDockerContainers()));
     setTick((t) => t + 1);
   };
@@ -130,16 +139,15 @@ function App() {
     return getProcessInfo(selected.pid);
   }, [selected?.pid, tick]);
 
-  const tmuxPane = useMemo<TmuxPane | null>(() => {
+  const pane = useMemo<PaneEntry | null>(() => {
     if (!selected?.pid) return null;
-    return findTmuxPaneForPid(selected.pid, panes);
+    return findPaneForPid(selected.pid, panes);
   }, [selected?.pid, panes]);
 
   const paneOutput = useMemo<string[]>(() => {
-    if (!tmuxPane) return [];
-    const target = `${tmuxPane.session}:${tmuxPane.windowIndex}.${tmuxPane.paneIndex}`;
-    return capturePane(target, 10);
-  }, [tmuxPane?.paneId, tick]);
+    if (!pane) return [];
+    return host.capture(pane, 10);
+  }, [pane?.captureTarget, tick]);
 
   const dockerHit = useMemo<DockerPortHit | null>(() => {
     if (!selected) return null;
@@ -161,13 +169,37 @@ function App() {
   };
   const toggleHidden = () => setShowUnknown((s) => !s);
   const gotoPane = () => {
-    if (!tmuxPane) return;
-    const r = switchToPane(tmuxPane);
+    if (!pane) return;
+    const r = host.goto(pane);
     if (r.ok) {
       renderer.destroy();
     } else {
-      setStatus({ kind: "error", text: `tmux: ${r.error ?? "switch failed"}` });
+      setStatus({
+        kind: "error",
+        text: `${host.kind}: ${r.error ?? "jump failed"}`,
+      });
     }
+  };
+  const openThemePicker = () => {
+    setThemePrev(currentThemeName);
+    setThemeSel(Math.max(0, THEME_NAMES.indexOf(currentThemeName)));
+    setView("theme");
+  };
+  const previewThemeAt = (i: number) => {
+    setThemeSel(i);
+    applyTheme(THEME_NAMES[i]!); // live preview (also persists)
+    repaint();
+  };
+  const previewTheme = (delta: number) =>
+    previewThemeAt((themeSel + delta + THEME_NAMES.length) % THEME_NAMES.length);
+  const commitTheme = () => {
+    setStatus({ kind: "info", text: `theme: ${currentThemeName}` });
+    setView("list");
+  };
+  const cancelTheme = () => {
+    applyTheme(themePrev); // revert the preview
+    repaint();
+    setView("list");
   };
   const doRefresh = () => {
     refresh();
@@ -288,6 +320,28 @@ function App() {
       return;
     }
 
+    if (view === "theme") {
+      switch (key.name) {
+        case "up":
+        case "k":
+          previewTheme(-1);
+          return;
+        case "down":
+        case "j":
+          previewTheme(1);
+          return;
+        case "enter":
+        case "return":
+          commitTheme();
+          return;
+        case "escape":
+        case "q":
+          cancelTheme();
+          return;
+      }
+      return;
+    }
+
     if (searchMode) {
       handleSearchKey(key);
       return;
@@ -324,6 +378,9 @@ function App() {
         return;
       case "r":
         doRefresh();
+        return;
+      case "t":
+        openThemePicker();
         return;
       case "h":
         toggleHidden();
@@ -372,7 +429,7 @@ function App() {
           total={baseCount}
         />
       )}
-      {view === "list" ? (
+      {view === "list" && (
         <Body
           visible={visible}
           start={start}
@@ -382,7 +439,8 @@ function App() {
           selectedIndex={selectedIndex}
           selected={selected}
           procInfo={procInfo}
-          tmuxPane={tmuxPane}
+          pane={pane}
+          paneHeader={host.header}
           paneOutput={paneOutput}
           dockerHit={dockerHit}
           dockerLogs={dockerLogs}
@@ -395,7 +453,8 @@ function App() {
             navigate((dir === "up" ? -1 : 1) * Math.max(1, delta))
           }
         />
-      ) : (
+      )}
+      {view === "confirm-kill" && (
         <ConfirmKill
           port={selected}
           signal={signal}
@@ -406,11 +465,14 @@ function App() {
           onCancel={() => setView("list")}
         />
       )}
+      {view === "theme" && (
+        <ThemePicker selectedIndex={themeSel} onSelect={previewThemeAt} />
+      )}
       <Footer
         status={status}
         canKill={!!(selected?.pid || (selected && dockerIdx.has(selected.port)))}
         canToggleHidden={hiddenCount > 0 || showUnknown}
-        canGoto={!!tmuxPane}
+        canGoto={!!pane}
         showUnknown={showUnknown}
         filtering={query.length > 0}
         onRefresh={doRefresh}
@@ -423,6 +485,7 @@ function App() {
         onForceKill={() => requestKill("SIGKILL")}
         onToggleHidden={toggleHidden}
         onGoto={gotoPane}
+        onTheme={openThemePicker}
         onQuit={() => renderer.destroy()}
       />
     </box>
@@ -485,7 +548,8 @@ function Body({
   selectedIndex,
   selected,
   procInfo,
-  tmuxPane,
+  pane,
+  paneHeader,
   paneOutput,
   dockerHit,
   dockerLogs,
@@ -504,7 +568,8 @@ function Body({
   selectedIndex: number;
   selected: PortEntry | null;
   procInfo: ProcessInfo | null;
-  tmuxPane: TmuxPane | null;
+  pane: PaneEntry | null;
+  paneHeader: string;
   paneOutput: string[];
   dockerHit: DockerPortHit | null;
   dockerLogs: string[];
@@ -532,7 +597,8 @@ function Body({
       <Details
         port={selected}
         procInfo={procInfo}
-        tmuxPane={tmuxPane}
+        pane={pane}
+        paneHeader={paneHeader}
         paneOutput={paneOutput}
         dockerHit={dockerHit}
         dockerLogs={dockerLogs}
@@ -659,7 +725,8 @@ function PortList({
 function Details({
   port,
   procInfo,
-  tmuxPane,
+  pane,
+  paneHeader,
   paneOutput,
   dockerHit,
   dockerLogs,
@@ -668,7 +735,8 @@ function Details({
 }: {
   port: PortEntry | null;
   procInfo: ProcessInfo | null;
-  tmuxPane: TmuxPane | null;
+  pane: PaneEntry | null;
+  paneHeader: string;
   paneOutput: string[];
   dockerHit: DockerPortHit | null;
   dockerLogs: string[];
@@ -756,25 +824,30 @@ function Details({
             </>
           )}
 
-          {tmuxPane && (
+          {pane && (
             <>
               <box marginTop={1} />
               <text fg={C.accentDim}>
-                <strong>━━ tmux ━━</strong>
+                <strong>━━ {paneHeader} ━━</strong>
               </text>
-              <Row
-                label="Session"
-                value={tmuxPane.session}
-                valueFg={C.accent}
-              />
-              <Row
-                label="Window"
-                value={`${tmuxPane.windowIndex}: ${tmuxPane.windowName}`}
-              />
+              {pane.rows.map((r) => (
+                <Row
+                  key={r.label}
+                  label={r.label}
+                  value={r.value}
+                  valueFg={
+                    r.accent === "accent"
+                      ? C.accent
+                      : r.accent === "light"
+                        ? C.accentLight
+                        : undefined
+                  }
+                />
+              ))}
               <box onMouseDown={onGoto}>
                 <Row
                   label="Target"
-                  value={`${tmuxPane.session}:${tmuxPane.windowIndex}.${tmuxPane.paneIndex}  ↵ go`}
+                  value={pane.gotoValue}
                   valueFg={C.accentLight}
                 />
               </box>
@@ -949,6 +1022,53 @@ function ConfirmKill({
   );
 }
 
+// Theme picker overlay: arrow keys preview live (App applies each step), enter
+// commits, esc reverts. Rows carry a swatch of each theme's key colors.
+function ThemePicker({
+  selectedIndex,
+  onSelect,
+}: {
+  selectedIndex: number;
+  onSelect: (idx: number) => void;
+}) {
+  return (
+    <box flexGrow={1} alignItems="center" justifyContent="center">
+      <box
+        border
+        borderStyle="double"
+        borderColor={C.accent}
+        padding={2}
+        width={44}
+        backgroundColor={C.surface}
+        flexDirection="column"
+      >
+        <text fg={C.accent}>
+          <strong>▌ THEME</strong>
+        </text>
+        <box marginTop={1} />
+        {THEME_NAMES.map((name, i) => {
+          const sel = i === selectedIndex;
+          return (
+            <box
+              key={name}
+              paddingX={1}
+              backgroundColor={sel ? C.accent : "transparent"}
+              onMouseOver={() => onSelect(i)}
+            >
+              <text fg={sel ? C.bg : C.text}>
+                {(sel ? "▸ " : "  ") + name}
+              </text>
+            </box>
+          );
+        })}
+        <box marginTop={1}>
+          <text fg={C.textDim}>↑↓ preview · ↵ apply · esc cancel</text>
+        </box>
+      </box>
+    </box>
+  );
+}
+
 function Footer({
   status,
   canKill,
@@ -963,6 +1083,7 @@ function Footer({
   onForceKill,
   onToggleHidden,
   onGoto,
+  onTheme,
   onQuit,
 }: {
   status: Status | null;
@@ -978,6 +1099,7 @@ function Footer({
   onForceKill: () => void;
   onToggleHidden: () => void;
   onGoto: () => void;
+  onTheme: () => void;
   onQuit: () => void;
 }) {
   return (
@@ -1023,6 +1145,7 @@ function Footer({
             onClick={onToggleHidden}
           />
         )}
+        <Key k="t" desc="theme" onClick={onTheme} />
         <Key k="q" desc="quit" onClick={onQuit} />
       </box>
     </box>
