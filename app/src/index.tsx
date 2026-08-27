@@ -32,8 +32,10 @@ import {
   THEME_NAMES,
 } from "./lib/theme";
 import { fuzzyScore } from "./lib/fuzzy";
+import { iconFor, iconsEnabled, HEADING, PLUG } from "./lib/icons";
 
 const host = getPaneHost();
+const ICONS = iconsEnabled();
 
 type View = "list" | "confirm-kill" | "theme";
 type Status = { kind: "info" | "error"; text: string };
@@ -496,7 +498,7 @@ function Header({ total }: { total: number }) {
   return (
     <box flexDirection="row" marginBottom={1} marginTop={1}>
       <text fg={C.accent}>
-        <strong>▌ PORTS</strong>
+        <strong>▌ {ICONS ? `${PLUG}  ` : ""}PORTS</strong>
         <span fg={C.textDim}> · {total} listening</span>
       </text>
     </box>
@@ -518,7 +520,7 @@ function SearchBar({
     <box
       flexDirection="row"
       border
-      borderStyle="single"
+      borderStyle="rounded"
       borderColor={active ? C.accent : C.border}
       paddingX={1}
     >
@@ -639,7 +641,7 @@ function PortList({
       width={54}
       border
       borderColor={C.border}
-      borderStyle="single"
+      borderStyle="rounded"
       title=" listening "
       titleAlignment="left"
       paddingX={1}
@@ -661,6 +663,7 @@ function PortList({
         <text fg={C.accentDim} width={9}>
           PID
         </text>
+        {ICONS && <text width={2}> </text>}
         <text fg={C.accentDim}>PROCESS</text>
       </box>
 
@@ -682,6 +685,10 @@ function PortList({
           const pidLabel = p.pid?.toString() ?? (dh ? "docker" : "?");
           const cmdLabel = p.command ?? (dh ? dh.container.name : "?");
           const cmdFg = !p.command && dh ? (sel ? C.bg : C.accentLight) : fg;
+          // Icon takes the process-name color when known; the fallback bullet
+          // stays dim so unknowns don't shout. Reserves accent for selection.
+          const icon = iconFor(p.command, dh?.container.image, dh?.container.name);
+          const iconFg = icon.known ? cmdFg : sel ? C.bg : C.textDim;
           return (
             <box
               key={`${p.port}-${p.pid ?? "x"}-${p.protocol}`}
@@ -698,6 +705,11 @@ function PortList({
               <text fg={dimFg} width={9}>
                 {pidLabel}
               </text>
+              {ICONS && (
+                <text fg={iconFg} width={2}>
+                  {icon.glyph}
+                </text>
+              )}
               <text fg={cmdFg}>{cmdLabel}</text>
             </box>
           );
@@ -719,6 +731,22 @@ function PortList({
         </box>
       )}
     </box>
+  );
+}
+
+// A details-panel section heading: a top gap, an optional leading glyph, and a
+// dim-bold label. No rule — the rounded panel border is the only line-art.
+function SectionHeading({ glyph, label }: { glyph?: string; label: string }) {
+  return (
+    <>
+      <box marginTop={1} />
+      <text>
+        {ICONS && glyph ? <span fg={C.accent}>{glyph}  </span> : null}
+        <span fg={C.accentDim}>
+          <strong>{label.toUpperCase()}</strong>
+        </span>
+      </text>
+    </>
   );
 }
 
@@ -749,7 +777,7 @@ function Details({
       flexGrow={1}
       border
       borderColor={C.border}
-      borderStyle="single"
+      borderStyle="rounded"
       title=" details "
       titleAlignment="left"
       paddingX={1}
@@ -776,10 +804,7 @@ function Details({
 
           {dockerHit && (
             <>
-              <box marginTop={1} />
-              <text fg={C.accentDim}>
-                <strong>━━ docker ━━</strong>
-              </text>
+              <SectionHeading glyph={HEADING.docker} label="docker" />
               <Row
                 label="Container"
                 value={dockerHit.container.name}
@@ -813,10 +838,16 @@ function Details({
 
           {procInfo && (
             <>
-              <box marginTop={1} />
-              <text fg={C.accentDim}>
-                <strong>━━ process ━━</strong>
-              </text>
+              <SectionHeading
+                glyph={
+                  iconFor(
+                    port.command,
+                    dockerHit?.container.image,
+                    dockerHit?.container.name,
+                  ).glyph
+                }
+                label="process"
+              />
               <Row label="Cmdline" value={procInfo.cmdline} />
               <Row label="Exe" value={procInfo.exe ?? "—"} />
               <Row label="CWD" value={procInfo.cwd ?? "—"} />
@@ -826,10 +857,10 @@ function Details({
 
           {pane && (
             <>
-              <box marginTop={1} />
-              <text fg={C.accentDim}>
-                <strong>━━ {paneHeader} ━━</strong>
-              </text>
+              <SectionHeading
+                glyph={HEADING[paneHeader as "tmux" | "herdr"]}
+                label={paneHeader}
+              />
               {pane.rows.map((r) => (
                 <Row
                   key={r.label}
@@ -852,20 +883,14 @@ function Details({
                 />
               </box>
 
-              <box marginTop={1} />
-              <text fg={C.accentDim}>
-                <strong>━━ tail ━━</strong>
-              </text>
+              <SectionHeading glyph={HEADING.tail} label="tail" />
               <LogBox lines={paneOutput} maxWidth={paneWidth} />
             </>
           )}
 
           {dockerHit && (
             <>
-              <box marginTop={1} />
-              <text fg={C.accentDim}>
-                <strong>━━ tail ━━</strong>
-              </text>
+              <SectionHeading glyph={HEADING.tail} label="tail" />
               <LogBox lines={dockerLogs} maxWidth={paneWidth} />
             </>
           )}
@@ -887,7 +912,7 @@ function LogBox({
   return (
     <box
       border
-      borderStyle="single"
+      borderStyle="rounded"
       borderColor={C.accentDim}
       backgroundColor={C.surface}
       paddingX={1}

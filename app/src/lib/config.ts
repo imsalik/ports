@@ -14,6 +14,9 @@ export interface PortsConfig {
   // The remembered theme name (themes registry key). In-app theme changes write
   // here so the choice survives across launches, tmux or not.
   theme?: string;
+  // Nerd Font process icons. Defaults on; set false (or PORTS_ICONS=0) to drop
+  // the icon column for terminals without a Nerd Font.
+  icons?: boolean;
 }
 
 function resolvePath(): string {

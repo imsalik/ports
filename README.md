@@ -68,6 +68,14 @@ set -g @ports-theme "mustard"     # mustard | dracula | gruvbox | nord | catppuc
 
 Standalone CLI: same theme via `PORTS_THEME=dracula ports`.
 
+### icons
+
+The process/container column and the details section headings use Nerd Font
+glyphs (docker, python, node, postgres, …). They need a Nerd Font in your
+terminal; unknown processes fall back to a `•` that renders anywhere. To turn
+icons off entirely (no icon column), set `PORTS_ICONS=0` or add `"icons": false`
+to the config below.
+
 ### theme persistence
 
 The `t` picker writes your choice to `~/.config/ports/config.json`, so it sticks
